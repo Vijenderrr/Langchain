@@ -3,40 +3,46 @@ import { createReadStream, writeFileSync } from 'fs';
 import OpenAI from 'openai';
 import * as dotenv from 'dotenv';
 
+dotenv.config();
+
 @Injectable()
 export class AudioAiService {
+    private openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+    });
 
-    constructor() { }
-
-    async createTranscription() {
-        const openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-        });
-
-
-        const response = await openai.audio.transcriptions.create({
-            file: createReadStream('AudioSample.m4a'),
+    /**
+     * Transcribe English audio to text using Whisper
+     */
+    async createTranscription(): Promise<string> {
+        const response = await this.openai.audio.transcriptions.create({
+            file: createReadStream('AudioSample.m4a'), // Ensure this file exists
             model: 'whisper-1',
             language: 'en',
-        })
-        console.log(response);
+        });
+
+        console.log('Transcription Result:', response.text);
+        return response.text;
     }
 
-
-    async translate() {
-        const openai = new OpenAI();
-        const response = await openai.audio.translations.create({
-            file: createReadStream('audio1.mp3'),
+    /**
+     * Translate non-English audio to English text using Whisper
+     */
+    async translate(): Promise<string> {
+        const response = await this.openai.audio.translations.create({
+            file: createReadStream('audio1.mp3'), // Provide non-English audio file
             model: 'whisper-1',
         });
-        console.log(response);
 
+        console.log('Translation Result:', response.text);
+        return response.text;
     }
 
-    async textToSpeech() {
-        const openai = new OpenAI();
-        const response = await openai.audio.speech.create({
-            input: `I snapped a pic of my chaos, caught a moment in time on my iPhone,
+    /**
+     * Convert a given text to high-quality spoken audio
+     */
+    async textToSpeech(): Promise<string> {
+        const inputText = `I snapped a pic of my chaos, caught a moment in time on my iPhone,
 Packed my bags, ready to roll, but you know I'm feeling like the GOAT now, gotta show it,
 Yeah, yeah, yeah, yeah, gotta show it,
 Yeah, yeah, yeah, yeah, watch me flow it.
@@ -79,16 +85,19 @@ Rolling deep, bro’s hand shaping the heat.
 Made the streets my canvas, highways too,
 Fat stacks coming in, all from what I drew,
 Rappers make a year’s worth from one khaki hue,
-What the fuck, now who’s calling through?
+What the fuck, now who’s calling through?`
 
-`,
-            voice: 'onyx',
+        const response = await this.openai.audio.speech.create({
+            input: inputText,
+            voice: 'onyx',       // Other voices: alloy, echo, fable, nova, shimmer
             model: 'tts-1',
-            response_format: 'mp3'
+            response_format: 'mp3',
         });
 
         const buffer = Buffer.from(await response.arrayBuffer());
-        writeFileSync('audio1.mp3', buffer);
-    }
+        writeFileSync('output.mp3', buffer);
+        console.log('Audio saved as output.mp3');
 
+        return 'output.mp3';
+    }
 }

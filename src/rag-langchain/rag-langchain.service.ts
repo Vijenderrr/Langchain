@@ -18,6 +18,8 @@ export class RagLangchainService {
         verbose: true
     });
 
+    private question = "What are my favorite foods?";
+
     private myData = [
         "My name is John",
         "My name os Bob",
@@ -25,102 +27,101 @@ export class RagLangchainService {
         "My favorite food is pasta",
     ]
 
-    private question = "What are my favorite foods?";
-
+    /**
+      * This function demonstrates a full RAG flow:
+      * - Load a webpage
+      * - Split it into chunks
+      * - Store in memory vector store
+      * - Retrieve relevant chunks
+      * - Ask a question based on them
+      */
     async main() {
 
-        //cheerio webpage loader
-        const loader = new CheerioWebBaseLoader('https://stackoverflow.com/questions/57007075/running-rabbitmq-in-docker-container')
+        // Step 1: Load HTML content from the web
+        const loader = new CheerioWebBaseLoader(
+            'https://stackoverflow.com/questions/57007075/running-rabbitmq-in-docker-container'
+        );
         const docs = await loader.load();
 
-        //text splitter
-        const textSplitter = new RecursiveCharacterTextSplitter({   ///there are many text splitters available in langchain, but we are using the basic one
+        // Step 2: Split the content into chunks
+        const splitter = new RecursiveCharacterTextSplitter({
             chunkSize: 200,
-            chunkOverlap: 50
+            chunkOverlap: 50,
         });
+
+        const splitDocs = await splitter.splitDocuments(docs);
 
         //just add this data in the vector store
-        const splitedDocs = await textSplitter.splitDocuments(docs);
+        // const splitedDocs = await textSplitter.splitDocuments(docs);
 
+        // Step 3: Create an in-memory vector store
+        const vectorStore = new MemoryVectorStore(new OpenAIEmbeddings());
 
-        //Store the data in vector data base of langchain
-        const vectorStore = new MemoryVectorStore(new OpenAIEmbeddings)
-        //instad of using the MemoryVectorStore of langchain we can use chromaDB in to do the same. Use the function storingInChromaDB() to store the data in chromaDB
-
-        await vectorStore.addDocuments(this.myData.map(
-            content => new Document({ pageContent: content })
-        ));
-
-        // await vectorStore.addDocuments(splitedDocs);
-
-        //create data retriever
-        const retriever = vectorStore.asRetriever({
-            k: 2 //it will give us 2 most relevant documents
-        });
-
-        //get relevant documents:
-        const results = await retriever._getRelevantDocuments(this.question);
-
-        const resultDocs = results.map(
-            result => result.pageContent
+        // Option 1: Use static text instead of webpage for simplicity
+        await vectorStore.addDocuments(
+            this.myData.map((text) => new Document({ pageContent: text }))
         );
 
-        const template = ChatPromptTemplate.fromMessages([
-            ['system', 'Answer the users questions based on the following context: {context}'],
-            ['user', '{input}']
-        ])
+        //Option 2: use splited data from browser
+        // await vectorStore.addDocuments(splitedDocs);
 
-        const chain = template.pipe(this.model);
+        // Step 4: Retrieve top 2 most relevant documents
+        const retriever = vectorStore.asRetriever({ k: 2 });
+        const results = await retriever._getRelevantDocuments(this.question);
+        const context = results.map((doc) => doc.pageContent).join('\n');
+
+
+        // Step 5: Prepare a prompt and query the model
+        const prompt = ChatPromptTemplate.fromMessages([
+            ['system', 'Answer the user’s question based on the following context:\n{context}'],
+            ['user', '{input}'],
+        ]);
+
+        const chain = prompt.pipe(this.model);
 
         const response = await chain.invoke({
-            context: resultDocs,
-            input: this.question
+            context,
+            input: this.question,
         });
 
-        console.log(response);
+        console.log('RAG Response:', response.content);
+        return response.content;
 
     }
 
-//here we are loading the pdf file and splitting the text
+    //here we are loading the pdf file and splitting the text
     async pdfBaseLoader() {
         const loader = new PDFLoader('PolicySchedule-696237053.pdf')
         const docs = await loader.load();
 
         //text splitter with custom separator
         const textSplitter = new RecursiveCharacterTextSplitter({
-           separators:[`, \n`]
+            separators: [`, \n`]
         });
 
         //just add this data in the vector store
         const splitedDocs = await textSplitter.splitDocuments(docs);
 
-        console.log('splited dossssdsdsd',splitedDocs);
-        
+        console.log('PDF split output:', splitedDocs);
+        return splitedDocs;
+
 
     }
 
-//here we are storing the data in chroma db
-
-//this is without langchain
-    // private client = new ChromaClient({
-    //     path: 'http://localhost:8000',
-    // })
-
-
-    // private embeddingFunction =  new OpenAIEmbeddingFunction({
-    //     openai_api_key: process.env.OPENAI_API_KEY!,
-    //     openai_model:'text-embedding-3-small'
-    // })
-
-    async storingInChromaDB(splitDocuments){
+    /**
+ * Stores split documents into ChromaDB
+ */
+    async storingInChromaDB(splitDocuments) {
 
         //this is with langchain
-        const vectorStore = await Chroma.fromDocuments(splitDocuments, new OpenAIEmbeddings(),{
-            collectionName:'books',
-            url:'http://localhost:8000'
+        //it will automatically create a collection named 'books' in ChromaDB
+        const vectorStore = await Chroma.fromDocuments(splitDocuments, new OpenAIEmbeddings(), {
+            collectionName: 'books',
+            url: 'http://localhost:8000'
         })
 
-        return vectorStore
+        console.log('Data stored in Chroma');
+        return vectorStore;
 
     }
 }

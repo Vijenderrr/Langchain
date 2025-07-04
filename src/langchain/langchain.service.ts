@@ -16,28 +16,34 @@ export class LangchainService {
         verbose: true // set to true to see the logs in the console more clearly
     });
 
+
+    // 🔸 Simple use: Basic model call with string, batch, and stream
     async main() {
 
         //we will get the response from the model for the question we asked
-        const response1 = await this.model.invoke(
-            'Give me 4 good books to read'
-        )
+        const singlePrompt = await this.model.invoke('Give me 4 good books to read');
+        console.log('Single prompt result:', singlePrompt.content);
+
 
         //in this we will get the response from the model for the batch of questions we asked
-        const response2 = await this.model.batch([
+        const batchPrompt = await this.model.batch([
             'Hello',
-            'give me a summary of the book'
-        ])
+            'Give me a summary of the book "Atomic Habits"',
+        ]);
+        console.log('Batch result:', batchPrompt.map((res) => res.content));
 
+        
         //in this we will get the response from the model for the stream of questions we asked
-        const response3 = await this.model.stream('give me 4 good books to read');
-        for await (const chunk of response3) {
+        const streamPrompt = await this.model.stream('Give me 4 good books to read');
+        console.log('Streamed response:');
+        for await (const chunk of streamPrompt) {
             console.log(chunk.content);
-
         }
-        return response3
+        return streamPrompt
     }
 
+
+    // 🔸 PromptTemplate from string
     async fromTemplate() {
         const prompt = ChatPromptTemplate.fromTemplate(
             'write a short description for the following producs: {product_name}'
@@ -47,19 +53,22 @@ export class LangchainService {
         const wholePrompt = await prompt.format({
             product_name: 'bicycle'
         })
+        console.log('The template will look like:', wholePrompt);
+
 
         //create a chain: connecting the model with the prompt
         const chain = prompt.pipe(this.model);
-        console.log('???????????', wholePrompt);
 
         const response = await chain.invoke({
             product_name: 'bicycle'
         })
 
-        console.log('response????', response)
+        console.log('fromTemplate → Response:', response.content);
+        return response.content;
     }
 
 
+    // 🔸 Prompt from system + human messages
     async fromMessage() {
         const prompt = ChatPromptTemplate.fromMessages([
             ['system', 'write a short for the product provided by user'],
@@ -67,13 +76,14 @@ export class LangchainService {
         ])
 
         const chain = prompt.pipe(this.model);
-        const result = await chain.invoke({
-            //is the name is different from that of the template, it will show an error
+        const response = await chain.invoke({
+            //if the name is different from that of the template, it will show an error
             //so we need to make sure that the name of the variable is same as that of
             product_name: 'bicycle'
         })
 
-        console.log('result????????', result);
+        console.log('fromMessage → Response:', response.content);
+        return response.content;
 
     }
 
@@ -85,21 +95,22 @@ export class LangchainService {
         );
 
         //with this parser we will get the response.content directly...
-        const parser = new StringOutputParser();
+        const parser = new StringOutputParser();  // Only content (no metadata)
 
         const chain = prompt.pipe(this.model).pipe(parser);
 
         const response = await chain.invoke({
             product_name: 'bicycle'
         })
-        console.log('stringparser???', response)
+        console.log('String Parser →', response);
+        return response;
     }
 
 
-
+    // 🔸 Parse response into comma-separated values
     async commaSeperatedParser() {
         const prompt = ChatPromptTemplate.fromTemplate(
-            'Write a short description for the following products: {product_name}'
+            'Give me the list of cities in country: {country_name}'
         );
 
         //with this parser we will get the response.content directly...
@@ -108,18 +119,21 @@ export class LangchainService {
         const chain = prompt.pipe(this.model).pipe(parser);
 
         const response = await chain.invoke({
-            product_name: 'bicycle'
+            country_name: 'bicycle'
         })
-        console.log('stringparser???', response)
+        console.log('Comma Separated Parser →', response);
+        return response;
     }
 
-
+    // 🔸 Structured JSON-like output
     async structuredParser() {
         const templatePrompt = ChatPromptTemplate.fromTemplate(`
             Extract information from the following phrase.
             Formatting instructions: {formatting_instructions}
             Phrase: {phrase}
             `);
+
+        // The output parser will parse the response into a structured JSON object
         const outputParser = StructuredOutputParser.fromNamesAndDescriptions({
             name: 'the name of the person',
             likes: 'what the person likes',
@@ -129,10 +143,11 @@ export class LangchainService {
 
         const response = await chain.invoke({
             formatting_instructions: outputParser.getFormatInstructions(),
-            phrase: 'John likes to play football'
+            phrase: 'John likes to play football and drink tea'
         });
 
-        console.log('response????', response)
+        console.log('Structured Parser →', response);
+        return response;
     }
 
 }
