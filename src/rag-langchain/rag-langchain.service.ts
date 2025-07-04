@@ -4,9 +4,13 @@ import { MemoryVectorStore } from 'langchain/vectorstores/memory'
 import { Document } from '@langchain/core/documents'
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
-import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter'
+import { RecursiveCharacterTextSplitter, TextSplitter } from 'langchain/text_splitter'
 import { PDFLoader } from '@langchain/community/document_loaders/fs/pdf'
 import { Chroma } from '@langchain/community/vectorstores/chroma'
+
+import { BufferMemory } from 'langchain/memory';
+import { RunnableSequence } from '@langchain/core/runnables';
+
 
 @Injectable()
 export class RagLangchainService {
@@ -39,7 +43,7 @@ export class RagLangchainService {
 
         // Step 1: Load HTML content from the web
         const loader = new CheerioWebBaseLoader(
-            'https://stackoverflow.com/questions/57007075/running-rabbitmq-in-docker-container'
+            'https://en.wikipedia.org/wiki/Instagram'
         );
         const docs = await loader.load();
 
@@ -74,6 +78,7 @@ export class RagLangchainService {
         // Step 5: Prepare a prompt and query the model
         const prompt = ChatPromptTemplate.fromMessages([
             ['system', 'Answer the user’s question based on the following context:\n{context}'],
+            // ['system', 'Conversation History:\n{history}'],  //option 1 the simpler way..
             ['user', '{input}'],
         ]);
 
@@ -87,6 +92,73 @@ export class RagLangchainService {
         console.log('RAG Response:', response.content);
         return response.content;
 
+    }
+
+
+    async main_1(question: string) {
+        // Step 1: Load HTML content from the web
+        const loader = new CheerioWebBaseLoader(
+            'https://en.wikipedia.org/wiki/Instagram'
+        );
+        const docs = await loader.load();
+
+        // Step 2: Split the content into chunks
+        const splitter = new RecursiveCharacterTextSplitter({
+            chunkSize: 200,
+            chunkOverlap: 50,
+        });
+
+        const splitDocs = await splitter.splitDocuments(docs);
+        console.log('splitdoz',docs);
+        
+
+        // Step 3: Create an in-memory vector store
+        const vectorStore = new MemoryVectorStore(new OpenAIEmbeddings());
+
+        // Use static data for now (or replace with: await vectorStore.addDocuments(splitDocs);)
+        await vectorStore.addDocuments(
+            splitDocs
+        );
+
+        // Step 4: Retrieve top 2 most relevant documents
+        const retriever = vectorStore.asRetriever({ k: 2 });
+        console.log( 'Question:', question);
+        
+        const results = await retriever._getRelevantDocuments(question);
+        const context = results.map((doc) => doc.pageContent).join('\n');
+
+        // Step 5: Use LangChain's ConversationChain with memory
+        const memory = new BufferMemory({
+            memoryKey: "history", // required for ConversationChain
+            returnMessages: true
+        });
+
+        const prompt = ChatPromptTemplate.fromMessages([
+            ['system', 'You are a helpful assistant. Use the following context to assist the user.\nContext: {context}'],
+            ['user', '{input}'],
+        ]);
+
+        const chain = RunnableSequence.from([
+            {
+                history: async () => await memory.loadMemoryVariables({}),
+                context: async () => context,
+                input: async () => question
+            },
+            prompt,
+            this.model
+        ]);
+
+        // 4. Run the chain
+        const response = await chain.invoke({});
+
+        // 5. Save to memory manually
+        await memory.saveContext(
+            { input: this.question },
+            { output: response.content }
+        );
+
+        console.log('RAG + Memory Response:', response.content);
+        return response.content;
     }
 
     //here we are loading the pdf file and splitting the text

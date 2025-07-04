@@ -32,7 +32,7 @@ export class LangchainService {
         ]);
         console.log('Batch result:', batchPrompt.map((res) => res.content));
 
-        
+
         //in this we will get the response from the model for the stream of questions we asked
         const streamPrompt = await this.model.stream('Give me 4 good books to read');
         console.log('Streamed response:');
